@@ -51,7 +51,7 @@ private slots:
 
     void on_checkBox_SendDisplay_clicked(bool checked);
     void on_pushButton_FlushPort_clicked();
-    void Delay_MSec(unsigned int msec);
+
 private:
     Ui::MainWindow *ui;
     QSerialPort Serial;
@@ -59,6 +59,10 @@ private:
     int timer_id1;
     void SerialSetInit(void);
     void NetworkInit(void);
+    char ConvertHexChar(char ch);
+    QByteArray QString2Hex(QString str);
+    QString AddSpaceString(QString data);
+    void Delay_MSec(unsigned int msec);
 
 };
 

@@ -190,14 +190,81 @@ void MainWindow::Delay_MSec(unsigned int msec)
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
 }
 
+QString MainWindow::AddSpaceString(QString data)
+{
+    QString textString;
+    for(int i = 0; i < data.length() / 2; i++)
+    {
+        textString += data.mid(i*2, 2);
+        textString += " ";
+    }
+    return textString;
+}
+
 // 串口接收数据
 void MainWindow::ReadRecData()
 {
-    Delay_MSec(100);
-    QByteArray readData = Serial.readAll();//读取串口数据
+    QByteArray readData;
     QByteArray NewData;
     QString current_date;
 
+    if(HexRecvFlag)  //判断是否使用HEX
+    {
+        //判断是否使用时间戳
+        if(EnableTimeFlag == 1)
+        {
+            current_date_time = QDateTime::currentDateTime();
+            current_date += "[";
+            current_date += current_date_time.toString("yyyy-MM-dd hh:mm:ss");
+            current_date += "]收->";
+            Delay_MSec(300);
+            readData = Serial.readAll(); //读取串口数据
+            if(!readData.isNull())
+            {
+                QString readString = QString(readData.toHex().toUpper());
+                QString textString = AddSpaceString(readString);
+                ui->textEdit_Recv->append(current_date.toUtf8() + textString);
+            }
+        }
+        else
+        {
+//           ui->textEdit_Recv->append(readData.toHex());
+            readData = Serial.readAll(); //读取串口数据
+            if(!readData.isNull())
+            {
+                QString readString = QString(readData.toHex().toUpper());
+                QString textString = " " + AddSpaceString(readString);
+                ui->textEdit_Recv->insertPlainText(textString); //insertPlainText不会自动换行，但是CPU占用率高，可能会卡
+            }
+        }
+    }
+    else
+    {
+        //判断是否使用时间戳
+        if(EnableTimeFlag == 1)
+        {
+            current_date_time = QDateTime::currentDateTime();
+            current_date += "[";
+            current_date += current_date_time.toString("yyyy-MM-dd hh:mm:ss");
+            current_date += "]收->";
+            Delay_MSec(300);
+            readData = Serial.readAll(); //读取串口数据
+            if(!readData.isNull())
+            {
+                ui->textEdit_Recv->append(current_date.toUtf8() + readData);
+            }
+        }
+        else
+        {
+            //ui->textEdit_Recv->append(readData);  //使用append会自动换行，但是只刷新更新的内容，CPU占用率低不会卡
+            readData = Serial.readAll(); //读取串口数据
+            if(!readData.isNull())
+            {
+                ui->textEdit_Recv->insertPlainText(QString(readData)); //insertPlainText不会自动换行，但是CPU占用率高，可能会卡
+            }
+        }
+    }
+#if 0
    if(!readData.isNull())//将读到的数据显示到数据接收区
    {
        if(HexRecvFlag)  //判断是否使用HEX
@@ -222,6 +289,7 @@ void MainWindow::ReadRecData()
            //判断是否使用时间戳
            if(EnableTimeFlag == 1)
            {
+               Delay_MSec(100);
                current_date_time = QDateTime::currentDateTime();
                current_date += "[";
                current_date += current_date_time.toString("yyyy-MM-dd hh:mm:ss");
@@ -230,11 +298,13 @@ void MainWindow::ReadRecData()
            }
            else
            {
-               ui->textEdit_Recv->append(readData);
+               //ui->textEdit_Recv->append(readData);  //使用append会自动换行，但是只刷新更新的内容，CPU占用率低不会卡
+               ui->textEdit_Recv->insertPlainText(QString(readData)); //insertPlainText不会自动换行，但是CPU占用率高，可能会卡
            }
        }
 
    }
+#endif
 }
 
 //清除接收窗口数据
@@ -247,6 +317,54 @@ void MainWindow::on_pushButton_ClearRecv_clicked()
 void MainWindow::on_pushButton_2_clicked()
 {
    ui->textEdit_Send->clear();
+}
+
+
+//将一个字符串转换成十六进制
+QByteArray MainWindow::QString2Hex(QString str)
+{
+    QByteArray senddata;
+    int hexdata,lowhexdata;
+    int hexdatalen = 0;
+    int len = str.length();
+    senddata.resize(len/2);
+    char lstr,hstr;
+    for(int i=0; i<len; )
+    {
+        hstr=str[i].toLatin1();
+        if(hstr == ' ')
+        {
+            i++;
+            continue;
+        }
+        i++;
+        if(i >= len)
+        break;
+        lstr = str[i].toLatin1();
+        hexdata = ConvertHexChar(hstr);
+        lowhexdata = ConvertHexChar(lstr);
+        if((hexdata == 16) || (lowhexdata == 16))
+            break;
+        else
+            hexdata = hexdata*16+lowhexdata;
+        i++;
+        senddata[hexdatalen] = (char)hexdata;
+        hexdatalen++;
+    }
+    senddata.resize(hexdatalen);
+    return senddata;
+}
+
+
+char MainWindow::ConvertHexChar(char ch)
+{
+    if((ch >= '0') && (ch <= '9'))
+        return ch-0x30;
+    else if((ch >= 'A') && (ch <= 'F'))
+        return ch-'A'+10;
+    else if((ch >= 'a') && (ch <= 'f'))
+        return ch-'a'+10;
+    else return (-1);
 }
 
 //发送数据
@@ -263,23 +381,20 @@ void MainWindow::on_pushButton_Send_clicked()
        return;
     }
 
-    QString str_send, str2;
-    bool ok;
-    for(int i = 0; i < DataStr.length(); i++)
+    if(RnSendFlag)
     {
-         if(DataStr[i] != ' ')
-         {
-             str2 += DataStr[i];
-         }
+        DataStr = DataStr + '\r';
     }
-
-    for(int i = 0; i < str2.length(); i+=2)
-    {
-         str_send += str2.mid(i,2).toUInt(&ok, 16);
-    }
-
     if(HexSendFlag)        //使能Hex发送时
     {
+        QStringList strList = DataStr.split(" ", QString::SkipEmptyParts);  //
+        QByteArray str_send;
+
+        for(int i = 0;i < strList.size(); i++)
+        {
+            str_send += QString2Hex(strList[i]);
+        }
+
        ui->checkBox_SendRN->setChecked(false);
        if(EnableTimeFlag)  //判断是否使能时间戳
        {
@@ -287,21 +402,21 @@ void MainWindow::on_pushButton_Send_clicked()
            current_date += "[";
            current_date += current_date_time.toString("yyyy-MM-dd hh:mm:ss");
            current_date += "]发->";
-           NewData = current_date + str_send.toUtf8().toHex();
-           if(SendDisplayFlag == 1)
+           NewData = current_date + DataStr;
+            if(SendDisplayFlag == 1)
            {
                ui->textEdit_Recv->append(NewData);
            }
        }
        else
        {
-          NewData = str_send.toLatin1().toHex();
+          NewData = DataStr;
           if(SendDisplayFlag == 1)
           {
               ui->textEdit_Recv->append(NewData);
           }
        }
-       Serial.write(str_send.toUtf8());//写入缓冲区
+       Serial.write(str_send);//写入缓冲区
     }
     else           //不使能Hex发送时
     {
